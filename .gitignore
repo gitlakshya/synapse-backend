@@ -1,0 +1,8 @@
+.env/*
+.env/
+__pycache__/
+env/
+dev-env/
+
+.env
+calcium-ratio-472014-r9-3d131c16d898.json
