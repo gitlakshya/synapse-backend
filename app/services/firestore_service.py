@@ -17,7 +17,7 @@ Assumptions (per MVP):
 
 import uuid
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from firebase_admin import firestore
 
 
@@ -32,7 +32,7 @@ class FirestoreService:
         return f"{prefix}_{uuid.uuid4().hex[:10]}"
 
     def _now(self):
-        return datetime.utcnow()
+        return datetime.now(timezone.utc)
 
     # -------------------------
     # User Helpers
@@ -108,8 +108,50 @@ class FirestoreService:
 
     def list_itineraries_for_session(self, session_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         col = self.db.collection("sessions").document(session_id).collection("itineraries")
-        snaps = col.order_by("updatedAt", direction=firestore.Query.DESCENDING).limit(limit).stream()
-        return [s.to_dict() for s in snaps]
+        snaps = col.limit(limit).stream()
+        return [s.to_dict() for s in snaps if s.to_dict()]
+    
+    def replace_itinerary_for_user(self, uid: str, itinerary_id: str, itinerary_data: Dict[str, Any]) -> str:
+        doc_ref = (
+            self.db.collection("users")
+            .document(uid)
+            .collection("itineraries")
+            .document(itinerary_id)
+        )
+        snapshot = doc_ref.get()
+        created_at = snapshot.to_dict().get("createdAt") if snapshot.exists else firestore.SERVER_TIMESTAMP
+
+        doc_ref.set(
+            {
+                **itinerary_data,
+                "itineraryId": itinerary_id,
+                "createdAt": created_at,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
+        return itinerary_id
+
+
+    def replace_itinerary_for_session(self, session_id: str, itinerary_id: str, itinerary_data: Dict[str, Any]) -> str:
+        doc_ref = (
+            self.db.collection("sessions")
+            .document(session_id)
+            .collection("itineraries")
+            .document(itinerary_id)
+        )
+        snapshot = doc_ref.get()
+        created_at = snapshot.to_dict().get("createdAt") if snapshot.exists else firestore.SERVER_TIMESTAMP
+
+        doc_ref.set(
+            {
+                **itinerary_data,
+                "itineraryId": itinerary_id,
+                "createdAt": created_at,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            }
+        )
+        return itinerary_id
+
 
     # -------------------------
     # Migration: Session → User

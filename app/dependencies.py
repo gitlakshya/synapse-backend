@@ -1,21 +1,22 @@
 import os
 import json
 import logging
+from dotenv import load_dotenv
 from typing import Optional, Dict, Any
 
 from fastapi import Header, HTTPException, Depends
 from firebase_admin import credentials, initialize_app, get_app, _apps, auth, firestore as admin_firestore
 from google.cloud import secretmanager
 from google.api_core import exceptions as gapi_exceptions
-
+load_dotenv()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Environment variable names
+
 SERVICE_ACCOUNT_SECRET = os.getenv("SERVICE_ACCOUNT_SECRET")  # e.g. projects/PROJECT_ID/secrets/SA_KEY/versions/latest
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # local path (dev)
 PROJECT_ID = os.getenv("PROJECT_ID")  # optional, used if you want to build secret name
-
+DATABASE = os.getenv("DATABASE", "default")  # optional, used if you want to build secret name
 
 def _access_secret_from_sm(resource_name: str) -> Optional[str]:
     """
@@ -112,13 +113,13 @@ def init_firebase_admin():
         secret_payload = _access_secret_from_sm(secret_res_name)
         sa_dict = json.loads(secret_payload)
         _init_firebase_from_service_account_dict(sa_dict)
-        return admin_firestore.client()
+        return admin_firestore.client(database_id=DATABASE)
 
     # 2) GOOGLE_APPLICATION_CREDENTIALS (local dev)
     if GOOGLE_APPLICATION_CREDENTIALS and os.path.exists(GOOGLE_APPLICATION_CREDENTIALS):
         logger.info("Loading service account from path: %s", GOOGLE_APPLICATION_CREDENTIALS)
         _init_firebase_from_path(GOOGLE_APPLICATION_CREDENTIALS)
-        return admin_firestore.client()
+        return admin_firestore.client(database_id=DATABASE)
 
     # 3) ADC (Cloud Run)
     logger.info("No explicit service account provided, attempting Application Default Credentials (ADC)")

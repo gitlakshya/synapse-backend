@@ -1,51 +1,68 @@
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from app.services.firestore_service import FirestoreService
-from app.dependencies import get_firestore_service, verify_id_token_optional
+from app.dependencies import get_firestore_client, verify_id_token_dependency
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-router = APIRouter()
+router = APIRouter(tags=["trip"])
+db = get_firestore_client()
+fs = FirestoreService(db)
 
 class PlanTripRequest(BaseModel):
     sessionId: Optional[str] = None
     destination: str
-    days: int
+    days: Optional[int] = None
+    startDate: Optional[str] = None
+    endDate: Optional[str] = None
     budget: float
     preferences: Optional[dict] = {}
 
-@router.post("/planTrip")
+def getFirestoreService():
+    return FirestoreService(get_firestore_client())
+
+@router.post("/plantrip")
 async def plan_trip(
     body: PlanTripRequest,
-    fs: FirestoreService = Depends(get_firestore_service),
-    decoded=Depends(verify_id_token_optional)
+    fs: FirestoreService = Depends(getFirestoreService),
+    decoded: Optional[str] = Depends(verify_id_token_dependency)
 ):
     """
     Mock itinerary generator: returns a dummy itinerary and saves to Firestore.
+    Requires either authentication token OR session ID.
     """
+    # Validate that either auth token or session ID is present
+    if not decoded and not body.sessionId:
+        raise HTTPException(
+            status_code=401, 
+            detail="Authentication required: provide either auth token or sessionId"
+        )
+    
     uid = decoded["uid"] if decoded else None
-    session_id = body.sessionId or fs.create_session()
+    session_id = body.sessionId
 
     itinerary = {
         "itineraryId": f"it_{uuid.uuid4().hex[:8]}",
         "title": f"Trip to {body.destination}",
-        "input": body.dict(),
+        "input": body.model_dump(),
         "days": body.days,
         "budget": body.budget,
         "plan": [
             {"day": i+1, "activities": [f"Activity {i+1} in {body.destination}"]}
-            for i in range(body.days)
+            for i in range(body.days if body.days is not None else 1)
         ],
-        "createdAt": datetime.utcnow().isoformat(),
+        "createdAt": datetime.now(timezone.utc).isoformat(),
     }
-
+    
+    response_itinerary = itinerary.copy()
+    
     if uid:
         itin_id = fs.save_itinerary_for_user(uid, itinerary)
     else:
         itin_id = fs.save_itinerary_for_session(session_id, itinerary)
 
-    return {"status": "ok", "itineraryId": itin_id, "itinerary": itinerary}
+    return {"status": "ok", "itineraryId": itin_id, "itinerary": response_itinerary}
 
 @router.post("/adjustItinerary")
 async def adjust_itinerary(request: Request):
