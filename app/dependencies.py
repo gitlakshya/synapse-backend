@@ -18,6 +18,9 @@ GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # 
 PROJECT_ID = os.getenv("PROJECT_ID")  # optional, used if you want to build secret name
 DATABASE = os.getenv("DATABASE", "default")  # optional, used if you want to build secret name
 
+# Log the database configuration for debugging
+logger.info(f"Firestore database configuration: DATABASE={DATABASE}")
+
 def _access_secret_from_sm(resource_name: str) -> Optional[str]:
     """
     Given a full Secret Manager resource name (projects/.../secrets/.../versions/...),
@@ -99,7 +102,7 @@ def init_firebase_admin():
     if _apps:
         try:
             # firebase_admin.firestore.client returns the same underlying client
-            return admin_firestore.client()
+            return admin_firestore.client(database_id=DATABASE)
         except Exception:
             pass
 
@@ -124,7 +127,7 @@ def init_firebase_admin():
     # 3) ADC (Cloud Run)
     logger.info("No explicit service account provided, attempting Application Default Credentials (ADC)")
     _init_firebase_adc()
-    return admin_firestore.client()
+    return admin_firestore.client(database_id=DATABASE)
 
 
 # Lazily initialize a single global Firestore client to reuse across requests
