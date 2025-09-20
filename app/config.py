@@ -3,6 +3,8 @@ import os
 from pydantic_settings import BaseSettings
 from pydantic import ConfigDict
 from typing import List
+from dotenv import load_dotenv
+load_dotenv()
 
 class Settings(BaseSettings):
     # Application Settings
