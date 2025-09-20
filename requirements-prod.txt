@@ -20,7 +20,7 @@ python-dotenv==1.0.0
 python-multipart==0.0.6
 
 # Async support
-anyio==4.2.0
+anyio==4.8.0
 
 # Logging and monitoring
 google-cloud-logging==3.8.0
