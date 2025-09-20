@@ -50,5 +50,5 @@ def root():
 # For Cloud Run, the port is set via environment variable
 if __name__ == "__main__":
     import uvicorn
-    port = cloud_config.PORT if cloud_config.IS_CLOUD_RUN else 8000
+    port = cloud_config.PORT if cloud_config.IS_CLOUD_RUN else 8080
     uvicorn.run(app, host="0.0.0.0", port=port)
