@@ -1,76 +1,288 @@
-from fastapi import APIRouter, Request, Depends, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-from app.services.firestore_service import FirestoreService
-from app.dependencies import get_firestore_client, verify_id_token_dependency
+from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, Dict, Any, Union
 import uuid
+import logging
 from datetime import datetime, timezone
 
+from app.services.firestore_service import FirestoreService
+from app.services.itinerary_service import get_itinerary_service
+from app.services.smartAdjust import SmartAdjustAgent
+from app.dependencies import get_firestore_client, verify_id_token_dependency, optional_verify_id_token_dependency
+from app.routers.session import create_session
+
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["trip"])
-db = get_firestore_client()
-fs = FirestoreService(db)
 
+# Request Models
 class PlanTripRequest(BaseModel):
+    """Request model for trip planning with validation"""
     sessionId: Optional[str] = None
-    destination: str
-    days: Optional[int] = None
-    startDate: Optional[str] = None
-    endDate: Optional[str] = None
-    budget: float
-    preferences: Optional[dict] = {}
+    destination: str = Field(..., min_length=2, max_length=100, description="Travel destination")
+    days: int = Field(..., ge=1, le=30, description="Number of days (1-30)")
+    startDate: Optional[str] = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$', description="Start date (YYYY-MM-DD)")
+    endDate: Optional[str] = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$', description="End date (YYYY-MM-DD)")
+    budget: float = Field(..., ge=0, description="Total budget in local currency")
+    preferences: Optional[Dict[str, Union[int, float]]] = Field(default_factory=dict, description="Preference sliders (0-100)")
+    specialRequirements: Optional[str] = Field(None, max_length=500, description="Special requirements or accessibility needs")
+    
+    @field_validator('preferences')
+    @classmethod
+    def validate_preferences(cls, v):
+        if v:
+            valid_prefs = {'nature', 'nightlife', 'adventure', 'leisure', 'heritage', 'culture', 'food', 'shopping'}
+            for key, value in v.items():
+                if key not in valid_prefs:
+                    raise ValueError(f"Invalid preference: {key}. Must be one of {valid_prefs}")
+                if not (0 <= value <= 100):
+                    raise ValueError(f"Preference values must be between 0-100, got {value} for {key}")
+        return v
 
-def getFirestoreService():
+class SmartAdjustRequest(BaseModel):
+    """Request model for itinerary adjustment"""
+    sessionId: Optional[str] = None
+    itinerary: Dict[str, Any] = Field(..., description="Current itinerary to adjust")
+    userRequest: str = Field(..., min_length=5, max_length=500, description="Adjustment request")
+
+# Response Models
+class PlanTripResponse(BaseModel):
+    """Response model for trip planning"""
+    status: str
+    itineraryId: str
+    itinerary: Dict[str, Any]
+    processingTime: float
+    metadata: Dict[str, Any]
+
+class SmartAdjustResponse(BaseModel):
+    """Response model for itinerary adjustment"""
+    status: str
+    adjustedItinerary: Dict[str, Any]
+    processingTime: float
+    metadata: Dict[str, Any]
+
+class ErrorResponse(BaseModel):
+    """Error response model"""
+    status: str = "error"
+    message: str
+    details: Optional[Dict[str, Any]] = None
+
+# Helper Functions
+def get_firestore_service():
+    """Dependency to get FirestoreService instance"""
     return FirestoreService(get_firestore_client())
 
-@router.post("/plantrip")
+async def validate_auth_or_session(
+    decoded_token: Optional[str], 
+    session_id: Optional[str]
+) -> tuple[Optional[str], str]:
+    """Validate that either auth token or session ID is present"""
+    user_id = decoded_token.get("uid") if decoded_token else None
+    
+    if not user_id and not session_id:
+        session_id = create_session()
+        logger.info(f"Created session {session_id} for unauthenticated user")
+
+    return user_id, session_id
+
+# API Endpoints
+@router.post("/plantrip", response_model=PlanTripResponse, responses={
+    400: {"model": ErrorResponse, "description": "Bad Request"},
+    401: {"model": ErrorResponse, "description": "Unauthorized"},
+    500: {"model": ErrorResponse, "description": "Internal Server Error"}
+})
 async def plan_trip(
-    body: PlanTripRequest,
-    fs: FirestoreService = Depends(getFirestoreService),
-    decoded: Optional[str] = Depends(verify_id_token_dependency)
+    request: PlanTripRequest,
+    fs: FirestoreService = Depends(get_firestore_service),
+    decoded_token: Optional[str] = Depends(optional_verify_id_token_dependency)
+):
+    start_time = datetime.now()
+    
+    try:
+        logger.info(f"Planning trip to {request.destination} for {request.days} days, budget: {request.budget}")
+        
+        user_id, session_id = await validate_auth_or_session(decoded_token, request.sessionId)
+        
+        itinerary_service = get_itinerary_service()
+        
+        # Generate itinerary using AI
+        logger.info("Generating itinerary with AI service")
+        itinerary_data = await itinerary_service.generate_itinerary(
+            destination=request.destination,
+            days=request.days,
+            budget=request.budget,
+            preferences=request.preferences,
+            start_date=request.startDate,
+            end_date=request.endDate,
+            special_requirements=request.specialRequirements
+        )
+        
+        logger.info("Saving itinerary to Firestore")
+        itinerary_id = await itinerary_service.save_itinerary(
+            itinerary_data=itinerary_data,
+            user_id=user_id,
+            session_id=session_id
+        )
+        
+        # Calculate processing time
+        processing_time = (datetime.now() - start_time).total_seconds()
+        
+        # Prepare response
+        response_data = PlanTripResponse(
+            status="success",
+            itineraryId=itinerary_id,
+            itinerary=itinerary_data,
+            processingTime=processing_time,
+            metadata={
+                "userId": user_id,
+                "sessionId": session_id,
+                "generatedAt": datetime.now(timezone.utc).isoformat(),
+                "llmUsed": True,
+                "searchUsed": itinerary_data.get("meta", {}).get("searchUsed", False)
+            }
+        )
+        
+        logger.info(f"Trip planning completed successfully in {processing_time:.2f}s")
+        return response_data
+        
+    except ValueError as e:
+        logger.error(f"Validation error in trip planning: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"status": "error", "message": f"Invalid request: {str(e)}"}
+        )
+    except RuntimeError as e:
+        logger.error(f"Runtime error in trip planning: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"status": "error", "message": "AI service temporarily unavailable"}
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in trip planning: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"status": "error", "message": "Internal server error"}
+        )
+
+@router.post("/smartadjust", response_model=SmartAdjustResponse, responses={
+    400: {"model": ErrorResponse, "description": "Bad Request"},
+    500: {"model": ErrorResponse, "description": "Internal Server Error"}
+})
+async def adjust_itinerary(
+    request: SmartAdjustRequest,
+    fs: FirestoreService = Depends(get_firestore_service),
+    decoded_token: Optional[str] = Depends(optional_verify_id_token_dependency)
 ):
     """
-    Mock itinerary generator: returns a dummy itinerary and saves to Firestore.
-    Requires either authentication token OR session ID.
+    Adjust an existing itinerary using AI with Google Search integration.
+    
+    This endpoint intelligently modifies travel itineraries based on user requests
+    while maintaining the original structure and constraints.
+    
+    **Features:**
+    - AI-powered itinerary adjustment with schema compliance
+    - Google Search integration for real-time venue information
+    - Preservation of trip-level constraints (dates, budget, destination)
+    - Activity reordering, addition, and removal
+    - Cost recalculation and validation
     """
-    # Validate that either auth token or session ID is present
-    if not decoded and not body.sessionId:
-        raise HTTPException(
-            status_code=401, 
-            detail="Authentication required: provide either auth token or sessionId"
+    start_time = datetime.now()
+    
+    try:
+        logger.info(f"Adjusting itinerary with request: {request.userRequest[:100]}...")
+        
+        # Validate authentication or session
+        user_id, session_id = await validate_auth_or_session(decoded_token, request.sessionId)
+        
+        # Get SmartAdjust agent
+        agent = SmartAdjustAgent()
+        
+        # Adjust itinerary using AI
+        logger.info("Adjusting itinerary with SmartAdjust agent")
+        adjusted_content = agent.adjust_itinerary(
+            current_itinerary=request.itinerary,
+            user_request=request.userRequest
         )
-    
-    uid = decoded["uid"] if decoded else None
-    session_id = body.sessionId
+        
+        # Parse the adjusted itinerary
+        try:
+            import json
+            if isinstance(adjusted_content, str):
+                # Remove markdown formatting if present
+                content = adjusted_content.strip()
+                if content.startswith('```json'):
+                    content = content[7:]
+                if content.startswith('```'):
+                    content = content[3:]
+                if content.endswith('```'):
+                    content = content[:-3]
+                
+                adjusted_itinerary = json.loads(content)
+            else:
+                adjusted_itinerary = adjusted_content
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse adjusted itinerary: {e}")
+            raise ValueError("AI returned invalid JSON format")
+        
+        # Save adjusted itinerary
+        if user_id:
+            itinerary_id = fs.save_itinerary_for_user(user_id, adjusted_itinerary)
+        else:
+            itinerary_id = fs.save_itinerary_for_session(session_id, adjusted_itinerary)
+        
+        # Calculate processing time
+        processing_time = (datetime.now() - start_time).total_seconds()
+        
+        # Prepare response
+        response_data = SmartAdjustResponse(
+            status="success",
+            adjustedItinerary=adjusted_itinerary,
+            processingTime=processing_time,
+            metadata={
+                "userId": user_id,
+                "sessionId": session_id,
+                "adjustedAt": datetime.now(timezone.utc).isoformat(),
+                "itineraryId": itinerary_id,
+                "userRequest": request.userRequest
+            }
+        )
+        
+        logger.info(f"Itinerary adjustment completed successfully in {processing_time:.2f}s")
+        return response_data
+        
+    except ValueError as e:
+        logger.error(f"Validation error in itinerary adjustment: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"status": "error", "message": f"Invalid request: {str(e)}"}
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in itinerary adjustment: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"status": "error", "message": "Internal server error"}
+        )
 
-    itinerary = {
-        "itineraryId": f"it_{uuid.uuid4().hex[:8]}",
-        "title": f"Trip to {body.destination}",
-        "input": body.model_dump(),
-        "days": body.days,
-        "budget": body.budget,
-        "plan": [
-            {"day": i+1, "activities": [f"Activity {i+1} in {body.destination}"]}
-            for i in range(body.days if body.days is not None else 1)
-        ],
-        "createdAt": datetime.now(timezone.utc).isoformat(),
-    }
-    
-    response_itinerary = itinerary.copy()
-    
-    if uid:
-        itin_id = fs.save_itinerary_for_user(uid, itinerary)
-    else:
-        itin_id = fs.save_itinerary_for_session(session_id, itinerary)
-
-    return {"status": "ok", "itineraryId": itin_id, "itinerary": response_itinerary}
-
-@router.post("/adjustItinerary")
-async def adjust_itinerary(request: Request):
-    """
-    Mock adjust itinerary - returns modified mock plan.
-    """
-    body = await request.json()
-    itinerary = body.get("itinerary", {})
-    # Pretend to adjust plan based on preferences
-    itinerary["adjusted"] = True
-    return {"status": "ok", "adjustedItinerary": itinerary}
+@router.get("/health")
+async def health_check():
+    """Health check endpoint for the trip service"""
+    try:
+        # Test basic service dependencies
+        itinerary_service = get_itinerary_service()
+        fs = get_firestore_service()
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "services": {
+                "itinerary_service": "available",
+                "firestore_service": "available",
+                "llm_service": "available"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"status": "unhealthy", "error": str(e)}
+        )

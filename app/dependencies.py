@@ -177,6 +177,36 @@ async def verify_id_token_dependency(authorization: Optional[str] = Header(None)
     return decoded
 
 
+async def optional_verify_id_token_dependency(authorization: Optional[str] = Header(None)):
+    """
+    Optional FastAPI dependency that verifies ID token if present, returns None if not.
+    Supports both authenticated and anonymous users.
+    """
+    if not authorization:
+        return None
+    
+    try:
+        # Extract bearer token - will raise HTTPException if invalid format
+        parts = authorization.split(" ")
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            # Invalid format - raise error for malformed auth attempts
+            raise HTTPException(status_code=401, detail="Invalid Authorization header format")
+        
+        token = parts[1]
+        if not token:
+            return None
+            
+        # Verify the token
+        decoded = verify_id_token(token)
+        return decoded
+    except HTTPException:
+        # Re-raise HTTP exceptions (invalid token format, expired token, etc.)
+        raise
+    except Exception:
+        # Other errors - treat as no auth
+        return None
+
+
 def get_current_uid(decoded_token: Dict[str, Any]):
     """
     Helper to extract uid from decoded token.

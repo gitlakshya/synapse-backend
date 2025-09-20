@@ -1,0 +1,72 @@
+# Git and version control
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.venv
+dev-env/
+venv/
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Local development files
+*.log
+.env.local
+.env.development
+test_*.py
+demo_*.py
+mock_*.py
+
+# Windows specific
+*.exe
+*.dll
+
+# Certificates and keys (should be in secrets)
+*.json
+*.pem
+*.key
+*.cert
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

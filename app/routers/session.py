@@ -15,13 +15,9 @@ SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "4"))
 
 @router.post("/session")
 def create_session():
-    """
-    Create a guest session with TTL (4h).
-    Returns sessionId and expiry timestamp.
-    """
     session_id = fs.create_session()
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)
+    session_data = fs.get_session(session_id)
     return {
         "sessionId": session_id,
-        "expiresAt": expires_at.isoformat()
+        "expiresAt": session_data["expiresAt"].isoformat()
     }

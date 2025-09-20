@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from typing import Optional
-from app.dependencies import get_firestore_client, verify_id_token, verify_id_token_dependency, get_current_uid
+from app.dependencies import get_firestore_client, verify_id_token, verify_id_token_dependency, optional_verify_id_token_dependency, get_current_uid
 from app.services.firestore_service import FirestoreService
 from app.models.itinerary import Itinerary, SaveItineraryRequest, SaveItineraryResponse, ListItinerariesResponse
 
@@ -35,7 +35,7 @@ def save_itinerary(
 @router.get("/itineraries", response_model=ListItinerariesResponse)
 def list_itineraries(
     sessionId: Optional[str] = Query(None),
-    authorization: Optional[str] = Header(None)
+    decoded_token: Optional[str] = Depends(optional_verify_id_token_dependency)
 ):
     """
     List itineraries for either:
@@ -44,23 +44,16 @@ def list_itineraries(
     """
     # Guest mode → no auth required
     if sessionId:
-        itineraries = fs.list_itineraries_for_session(sessionId, limit=20)
-        return ListItinerariesResponse(ok=True, itineraries=itineraries)
-
+        return ListItinerariesResponse(ok=True, itineraries=fs.list_itineraries_for_session(sessionId))
+    
     # Authenticated mode
-    if not authorization:
+    if not decoded_token:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
 
-    token = authorization.split(" ")[1] if " " in authorization else authorization
-    decoded_token = verify_id_token(token)
-    uid = get_current_uid(decoded_token)
-    if not uid:
-        raise HTTPException(status_code=401, detail="Invalid UID in token")
+    uid = decoded_token.get("uid")
+    return ListItinerariesResponse(ok=True, itineraries=fs.list_itineraries_for_user(uid))
 
-    itineraries = fs.list_itineraries_for_user(uid, limit=20)
-    return ListItinerariesResponse(ok=True, itineraries=itineraries)
-
-@router.put("/itineraries/{itineraryId}", response_model=SaveItineraryResponse)
+@router.put("/itinerary/{itineraryId}", response_model=SaveItineraryResponse)
 def update_itinerary(
     itineraryId: str,
     itinerary: Itinerary,

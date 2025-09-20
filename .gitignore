@@ -1,8 +1,81 @@
-.env/*
-.env/
-__pycache__/
-env/
-dev-env/
-
+# Environment files
 .env
+.env.*
+!.env.example
+
+# Python virtual environments
+dev-env/
+env/
+venv/
+.venv/
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Secret/credential files
+*.json
+!firestore.indexes.json
+!package*.json
+*.key
+*.pem
+*.p12
+*credentials*
+*secret*
+
+# IDE files
+.vscode/settings.json
+.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
+
+# Cloud build artifacts
+.gcloudignore
+cloudbuild.yaml
+
+# Local database files
+*.db
+*.sqlite3
+
+# Service account keys (explicit protection)
 calcium-ratio-472014-r9-3d131c16d898.json
+service-account-key.json

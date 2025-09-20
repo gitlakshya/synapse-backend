@@ -34,6 +34,33 @@ class FirestoreService:
     def _now(self):
         return datetime.now(timezone.utc)
 
+    def is_session_valid(self, session_id: str) -> tuple[bool, str]:
+        """
+        Check if a session exists and is not expired.
+        
+        Returns:
+            tuple[bool, str]: (is_valid, reason_if_invalid)
+        """
+        try:
+            session_doc = self.db.collection("sessions").document(session_id).get()
+            
+            if not session_doc.exists:
+                return False, "Session does not exist"
+            
+            session_data = session_doc.to_dict()
+            expires_at = session_data.get("expiresAt")
+            
+            if not expires_at:
+                return False, "Session has no expiration date"
+            
+            if expires_at < self._now():
+                return False, "Session has expired"
+            
+            return True, "Session is valid"
+            
+        except Exception as e:
+            return False, f"Error checking session: {str(e)}"
+
     # -------------------------
     # User Helpers
     # -------------------------
@@ -77,19 +104,39 @@ class FirestoreService:
         snap = self.db.collection("sessions").document(session_id).get()
         return snap.to_dict() if snap.exists else None
 
-    def touch_session(self, session_id: str):
-        self.db.collection("sessions").document(session_id).update({"lastSeen": firestore.SERVER_TIMESTAMP})
+    def touch_session(self, session_id: str, extend_expiry: bool = True):
+        """
+        Update session's lastSeen timestamp and optionally extend expiry.
+        
+        Args:
+            session_id: The session ID to touch
+            extend_expiry: Whether to extend the session expiry by 4 hours
+        """
+        is_valid, reason = self.is_session_valid(session_id)
+        if not is_valid:
+            raise ValueError(f"Cannot touch session: {reason}")
+        
+        update_data = {"lastSeen": firestore.SERVER_TIMESTAMP}
+        
+        if extend_expiry:
+            new_expiry = self._now() + timedelta(hours=4)
+            update_data["expiresAt"] = new_expiry
+        
+        self.db.collection("sessions").document(session_id).update(update_data)
 
     # -------------------------
     # Itinerary Helpers
     # -------------------------
     def save_itinerary_for_user(self, uid: str, itinerary: Dict[str, Any]) -> str:
         itin_id = self._new_id("it")
-        itinerary["itineraryId"] = itin_id
-        itinerary["createdAt"] = firestore.SERVER_TIMESTAMP
-        itinerary["updatedAt"] = firestore.SERVER_TIMESTAMP
+        
+        itinerary_to_save = itinerary.copy()
+        itinerary_to_save["itineraryId"] = itin_id
+        itinerary_to_save["createdAt"] = firestore.SERVER_TIMESTAMP
+        itinerary_to_save["updatedAt"] = firestore.SERVER_TIMESTAMP
+        
         ref = self.db.collection("users").document(uid).collection("itineraries").document(itin_id)
-        ref.set(itinerary)
+        ref.set(itinerary_to_save)
         return itin_id
 
     def list_itineraries_for_user(self, uid: str, limit: int = 20) -> List[Dict[str, Any]]:
@@ -99,11 +146,19 @@ class FirestoreService:
 
     def save_itinerary_for_session(self, session_id: str, itinerary: Dict[str, Any]) -> str:
         itin_id = self._new_id("it")
-        itinerary["itineraryId"] = itin_id
-        itinerary["createdAt"] = firestore.SERVER_TIMESTAMP
-        itinerary["updatedAt"] = firestore.SERVER_TIMESTAMP
+        
+        itinerary_to_save = itinerary.copy()
+        itinerary_to_save["itineraryId"] = itin_id
+        itinerary_to_save["createdAt"] = firestore.SERVER_TIMESTAMP
+        itinerary_to_save["updatedAt"] = firestore.SERVER_TIMESTAMP
+
+        # Check if session exists and is not expired before saving itinerary
+        is_valid, reason = self.is_session_valid(session_id)
+        if not is_valid:
+            raise ValueError(f"Cannot save itinerary: {reason}")
+        
         ref = self.db.collection("sessions").document(session_id).collection("itineraries").document(itin_id)
-        ref.set(itinerary)
+        ref.set(itinerary_to_save)
         return itin_id
 
     def list_itineraries_for_session(self, session_id: str, limit: int = 20) -> List[Dict[str, Any]]:
