@@ -83,6 +83,27 @@ class FirestoreService:
         ref = self.db.collection("users").document(uid)
         ref.set({"preferences": preferences, "lastActiveAt": firestore.SERVER_TIMESTAMP}, merge=True)
 
+    def create_user_profile(self, uid: str, profile_data: Dict[str, Any]):
+        """Create a new user profile with Google Sign-In data"""
+        ref = self.db.collection("users").document(uid)
+        profile_data["createdAt"] = firestore.SERVER_TIMESTAMP
+        profile_data["lastActiveAt"] = firestore.SERVER_TIMESTAMP
+        ref.set(profile_data)
+
+    def update_user_profile(self, uid: str, profile_data: Dict[str, Any]):
+        """Update existing user profile"""
+        ref = self.db.collection("users").document(uid)
+        profile_data["lastActiveAt"] = firestore.SERVER_TIMESTAMP
+        ref.set(profile_data, merge=True)
+
+    def get_user_profile(self, uid: str) -> Optional[Dict[str, Any]]:
+        """Get user profile (alias for get_user for consistency)"""
+        return self.get_user(uid)
+
+    def _get_server_timestamp(self):
+        """Get Firestore server timestamp"""
+        return firestore.SERVER_TIMESTAMP
+
     # -------------------------
     # Session Helpers
     # -------------------------

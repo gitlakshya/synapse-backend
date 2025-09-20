@@ -27,16 +27,16 @@ class ItineraryService:
     def __init__(self):
         self.fs = FirestoreService(get_firestore_client())
         
-        # Try to use real LLM service, fall back to mock if API key not available
-        if os.getenv('GOOGLE_API_KEY'):
+        # Try to use real LLM service, fall back to mock if project ID not available
+        if os.getenv('GOOGLE_CLOUD_PROJECT'):
             self.llm_service = get_llm_service()
             self.using_mock = False
             logger.info("Using real LLM service")
         else:
-            from mock_llm_service import MockLLMService
+            from tests.mock_llm_service import MockLLMService
             self.llm_service = MockLLMService()
             self.using_mock = True
-            logger.warning("Using mock LLM service - API key not found")
+            logger.warning("Using mock LLM service - GOOGLE_CLOUD_PROJECT not found")
     
     async def generate_itinerary(
         self, 
@@ -81,10 +81,10 @@ class ItineraryService:
             
             # Configure LLM with Google Search for real-time information
             config = LLMConfig(
-                model="gemini-2.5-flash-lite",
+                model="gemini-2.0-flash-lite",
                 temperature=0.7,
                 top_p=0.95,
-                max_output_tokens=12288,
+                max_output_tokens=8000,
                 use_google_search=True,
                 safety_settings_off=True
             )
@@ -117,11 +117,20 @@ class ItineraryService:
             # Parse and validate the response
             itinerary_data = self._parse_llm_response(response.content)
             
+            # Add fallback POI IDs to activities
+            itinerary_data = self._add_fallback_poi_ids(itinerary_data)
+            
             # Enhance with metadata
             itinerary_data = self._add_metadata(
                 itinerary_data, 
                 session_id=session_id,
-                search_used=response.search_used
+                search_used=response.search_used,
+                destination=destination,
+                days=days,
+                budget=budget,
+                preferences=preferences,
+                start_date=start_date,
+                end_date=end_date
             )
             
             # Validate the structure
@@ -226,9 +235,32 @@ class ItineraryService:
         self, 
         itinerary_data: Dict[str, Any], 
         session_id: Optional[str] = None,
-        search_used: bool = False
+        search_used: bool = False,
+        destination: Optional[str] = None,
+        days: Optional[int] = None,
+        budget: Optional[float] = None,
+        preferences: Optional[Dict[str, Any]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Add metadata to the generated itinerary"""
+        """Add metadata and input section to the generated itinerary"""
+        
+        # Add input section
+        if "input" not in itinerary_data:
+            itinerary_data["input"] = {}
+        
+        if destination:
+            itinerary_data["input"]["destination"] = {"name": destination}
+        if days:
+            itinerary_data["input"]["numDays"] = days
+        if budget:
+            itinerary_data["input"]["budget"] = budget
+        if start_date:
+            itinerary_data["input"]["startDate"] = start_date
+        if end_date:
+            itinerary_data["input"]["endDate"] = end_date
+        if preferences:
+            itinerary_data["input"]["sliders"] = preferences
         
         if "meta" not in itinerary_data:
             itinerary_data["meta"] = {}
@@ -286,9 +318,9 @@ class ItineraryService:
                     title = itinerary_data.get("title", "")
                     if "to " in title:
                         dest = title.split("to ")[-1].split()[0]
-                        itinerary_data["input"]["destination"] = dest
+                        itinerary_data["input"]["destination"] = {"name": dest}
                     else:
-                        itinerary_data["input"]["destination"] = "Unknown"
+                        itinerary_data["input"]["destination"] = {"name": "Unknown"}
         
         return itinerary_data
     
@@ -323,6 +355,27 @@ class ItineraryService:
             
             raise
 
+    def _add_fallback_poi_ids(self, itinerary_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add fallback POI IDs to activities that don't have them"""
+        try:
+            if 'days' in itinerary_data:
+                for day in itinerary_data['days']:
+                    if 'activities' in day:
+                        for activity in day['activities']:
+                            if not activity.get('poiId'):
+                                activity['poiId'] = f"fallback_{uuid.uuid4().hex[:8]}"
+                                
+                                # Add basic snapshot
+                                activity_name = activity.get('title') or activity.get('name', 'Unknown Activity')
+                                activity['poiSnapshot'] = {
+                                    'name': activity_name
+                                }
+            
+            return itinerary_data
+            
+        except Exception as e:
+            logger.error(f"Error adding fallback POI IDs: {e}")
+            return itinerary_data
 
 def get_itinerary_service() -> ItineraryService:
     """Get instance of ItineraryService"""

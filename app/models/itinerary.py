@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List
 # ---------------------------
 
 class ItineraryInput(BaseModel):
-    destination: Dict[str, Any]  
+    destination: str  
     startDate: Optional[str] = None   
     endDate: Optional[str] = None     
     numDays: Optional[int] = None     

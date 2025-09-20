@@ -64,10 +64,24 @@ class SmartAdjustAgent:
             logger.info(f"Google Search was used: {response.search_used}")
             
             try:
-                adjusted_itinerary = json.loads(response.content)
+                # Parse the adjusted itinerary with cleanup for markdown formatting
+                if isinstance(response.content, str):
+                    # Remove markdown formatting if present
+                    content = response.content.strip()
+                    if content.startswith('```json'):
+                        content = content[7:]
+                    if content.startswith('```'):
+                        content = content[3:]
+                    if content.endswith('```'):
+                        content = content[:-3]
+                    
+                    adjusted_itinerary = json.loads(content)
+                else:
+                    adjusted_itinerary = response.content
                 return adjusted_itinerary
-            except json.JSONDecodeError:
-                logger.error("Failed to parse LLM response as JSON")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse LLM response as JSON: {e}")
+                logger.error(f"Raw response content: {response.content[:500]}...")
                 raise RuntimeError("Failed to parse LLM response as JSON")
             
         except Exception as e:

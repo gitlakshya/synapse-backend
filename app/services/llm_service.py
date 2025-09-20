@@ -293,7 +293,7 @@ class LLMConfig:
     model: str = "gemini-2.5-flash-lite"
     temperature: float = 0.7
     top_p: float = 0.95
-    max_output_tokens: int = 12288
+    max_output_tokens: int = 8192
     use_google_search: bool = False
     safety_settings_off: bool = True
 

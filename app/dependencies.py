@@ -101,8 +101,12 @@ def init_firebase_admin():
     # If already initialized, return the Firestore client
     if _apps:
         try:
-            # firebase_admin.firestore.client returns the same underlying client
+            # Try with database_id parameter (firebase-admin >= 6.5.0)
             return admin_firestore.client(database_id=DATABASE)
+        except TypeError:
+            # Fallback for older firebase-admin versions
+            logger.warning(f"firebase-admin version doesn't support database_id parameter. Using default database instead of {DATABASE}")
+            return admin_firestore.client()
         except Exception:
             pass
 
@@ -116,18 +120,30 @@ def init_firebase_admin():
         secret_payload = _access_secret_from_sm(secret_res_name)
         sa_dict = json.loads(secret_payload)
         _init_firebase_from_service_account_dict(sa_dict)
-        return admin_firestore.client(database_id=DATABASE)
+        try:
+            return admin_firestore.client(database_id=DATABASE)
+        except TypeError:
+            logger.warning(f"firebase-admin version doesn't support database_id parameter. Using default database instead of {DATABASE}")
+            return admin_firestore.client()
 
     # 2) GOOGLE_APPLICATION_CREDENTIALS (local dev)
     if GOOGLE_APPLICATION_CREDENTIALS and os.path.exists(GOOGLE_APPLICATION_CREDENTIALS):
         logger.info("Loading service account from path: %s", GOOGLE_APPLICATION_CREDENTIALS)
         _init_firebase_from_path(GOOGLE_APPLICATION_CREDENTIALS)
-        return admin_firestore.client(database_id=DATABASE)
+        try:
+            return admin_firestore.client(database_id=DATABASE)
+        except TypeError:
+            logger.warning(f"firebase-admin version doesn't support database_id parameter. Using default database instead of {DATABASE}")
+            return admin_firestore.client()
 
     # 3) ADC (Cloud Run)
     logger.info("No explicit service account provided, attempting Application Default Credentials (ADC)")
     _init_firebase_adc()
-    return admin_firestore.client(database_id=DATABASE)
+    try:
+        return admin_firestore.client(database_id=DATABASE)
+    except TypeError:
+        logger.warning(f"firebase-admin version doesn't support database_id parameter. Using default database instead of {DATABASE}")
+        return admin_firestore.client()
 
 
 # Lazily initialize a single global Firestore client to reuse across requests

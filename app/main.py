@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import trip, chat, itineraries, booking, session
+from app.routers import trip, chat, itineraries, booking, session, auth
 from app.config import settings, cloud_config
 
 # Initialize FastAPI app
@@ -26,6 +26,7 @@ app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(itineraries.router, prefix="/api/v1")
 app.include_router(booking.router, prefix="/api/v1", tags=["booking"])
 app.include_router(session.router, prefix="/api/v1")
+app.include_router(auth.router, prefix="/api/v1")
 
 @app.get("/health")
 def health_check():
