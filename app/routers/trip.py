@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -20,18 +20,21 @@ class PlanTripRequest(BaseModel):
     """Request model for trip planning with validation"""
     sessionId: Optional[str] = None
     destination: str = Field(..., min_length=2, max_length=100, description="Travel destination")
-    days: int = Field(..., ge=1, le=30, description="Number of days (1-30)")
+    days: int = Field(1, ge=1, le=30, description="Number of days (1-30)")
     startDate: Optional[str] = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$', description="Start date (YYYY-MM-DD)")
     endDate: Optional[str] = Field(None, pattern=r'^\d{4}-\d{2}-\d{2}$', description="End date (YYYY-MM-DD)")
     budget: float = Field(..., ge=0, description="Total budget in local currency")
     preferences: Optional[Dict[str, Union[int, float]]] = Field(default_factory=dict, description="Preference sliders (0-100)")
     specialRequirements: Optional[str] = Field(None, max_length=500, description="Special requirements or accessibility needs")
+    people:  int = Field(1, ge=1, le=10, description="Number of people (1-10)")
+    budgetBreakdown: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Budget breakdown")
+    themes: Optional[List[str]] = None
     
     @field_validator('preferences')
     @classmethod
     def validate_preferences(cls, v):
         if v:
-            valid_prefs = {'nature', 'nightlife', 'adventure', 'leisure', 'heritage', 'culture', 'food', 'shopping'}
+            valid_prefs = {'nature', 'nightlife', 'adventure', 'leisure', 'heritage', 'culture', 'food', 'shopping', 'unexplored'}
             for key, value in v.items():
                 if key not in valid_prefs:
                     raise ValueError(f"Invalid preference: {key}. Must be one of {valid_prefs}")
