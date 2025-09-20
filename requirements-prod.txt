@@ -5,9 +5,9 @@ pydantic==2.11.0
 pydantic-settings==2.6.1
 
 # Google Cloud dependencies
-google-cloud-firestore==2.13.1
+google-cloud-firestore==2.21.0
 google-cloud-secret-manager==2.18.1
-firebase-admin==6.5.0
+firebase-admin==6.6.0
 google-genai==0.3.0
 google-cloud-aiplatform==1.38.1
 

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     google_api_key: str = ""
     service_account_key_path: str = ""
     
+    # Google OAuth Configuration
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:3000/auth/callback"
+    
     # Pydantic V2 configuration (Python 3.13 compatible)
     model_config = ConfigDict(
         env_file=".env",
