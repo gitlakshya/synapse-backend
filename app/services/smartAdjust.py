@@ -29,25 +29,27 @@ class SmartAdjustAgent:
         """
         logger.info("SmartAdjustAgent: adjust_itinerary method called")
         
-        # Prepare user message with itinerary and request
+        # Prepare user message with clear JSON formatting instructions
         user_msg = (
             f"Here is the current itinerary JSON:\n{json.dumps(current_itinerary, indent=2)}\n\n"
             f"User adjustment request: {user_request}\n\n"
-            "Return the adjusted itinerary as a full JSON object."
+            "IMPORTANT: Return ONLY the adjusted itinerary as a valid JSON object. "
+            "Do not include any explanations, markdown formatting, or additional text. "
+            "The response must start with '{' and end with '}' and be valid JSON."
         )
         
-        # Use LLM config with Google Search enabled
+        # Use LLM config optimized for speed and reliability
         config = LLMConfig(
-            model="gemini-2.5-flash-lite",
-            temperature=0.7,
-            top_p=0.95,
-            max_output_tokens=8192,
-            use_google_search=True,
+            model="gemini-2.0-flash-lite",
+            temperature=0.3,  # Reduced for more consistent JSON output
+            top_p=0.8,  # Reduced for more focused generation
+            max_output_tokens=4096,  # Reduced for faster generation
+            use_google_search=False,  # Disabled for speed (adjustments rarely need real-time data)
             safety_settings_off=True
         )
         
         try:
-            logger.info("Making LLM call with Google Search for itinerary adjustment")
+            logger.info("Making optimized LLM call for itinerary adjustment (Google Search disabled for speed)")
             
             # Make the LLM call using centralized service
             response = self.llm_service.generate_content(
@@ -64,25 +66,64 @@ class SmartAdjustAgent:
             logger.info(f"Google Search was used: {response.search_used}")
             
             try:
-                # Parse the adjusted itinerary with cleanup for markdown formatting
+                # Robust JSON parsing with improved cleanup
                 if isinstance(response.content, str):
-                    # Remove markdown formatting if present
                     content = response.content.strip()
+                    
+                    # Remove common markdown formatting
                     if content.startswith('```json'):
                         content = content[7:]
-                    if content.startswith('```'):
+                    elif content.startswith('```'):
                         content = content[3:]
+                    
                     if content.endswith('```'):
                         content = content[:-3]
                     
+                    # Remove any leading/trailing whitespace and newlines
+                    content = content.strip()
+                    
+                    # Try to find JSON object boundaries if there's extra text
+                    start_idx = content.find('{')
+                    end_idx = content.rfind('}')
+                    
+                    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                        content = content[start_idx:end_idx + 1]
+                    
+                    # Parse the cleaned content
                     adjusted_itinerary = json.loads(content)
                 else:
                     adjusted_itinerary = response.content
+                
+                # Validate that we got a proper itinerary structure
+                if not isinstance(adjusted_itinerary, dict):
+                    raise ValueError("Response is not a valid JSON object")
+                
+                if 'days' not in adjusted_itinerary:
+                    raise ValueError("Response missing required 'days' field")
+                
                 return adjusted_itinerary
+                
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse LLM response as JSON: {e}")
-                logger.error(f"Raw response content: {response.content[:500]}...")
-                raise RuntimeError("Failed to parse LLM response as JSON")
+                logger.error(f"Raw response content: {response.content[:1000]}...")
+                
+                # Try alternative parsing approach - extract JSON from text
+                try:
+                    import re
+                    # Look for JSON object pattern in the response
+                    json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(0)
+                        adjusted_itinerary = json.loads(json_str)
+                        logger.info("Successfully recovered JSON using regex extraction")
+                        return adjusted_itinerary
+                except:
+                    pass
+                
+                raise RuntimeError(f"Failed to parse LLM response as JSON: {e}")
+            except ValueError as e:
+                logger.error(f"Invalid itinerary structure: {e}")
+                raise RuntimeError(f"Invalid itinerary structure: {e}")
             
         except Exception as e:
             logger.error(f"Exception in adjust_itinerary: {e}")
