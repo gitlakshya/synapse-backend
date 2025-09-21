@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Response
 from pydantic import BaseModel
 from typing import Optional
 import logging
@@ -21,7 +21,7 @@ class ChatResponse(BaseModel):
     session_id: Optional[str] = None
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, response: Response):
     """
     Chat endpoint using centralized LLM service with optional Google Search.
     """
@@ -45,6 +45,9 @@ async def chat(request: ChatRequest):
         
         if not llm_response.success:
             raise HTTPException(status_code=500, detail=f"Chat failed: {llm_response.error}")
+        
+        # Add timeout headers for frontend
+        response.headers["X-Request-Timeout"] = "120"
         
         return ChatResponse(
             status="success",

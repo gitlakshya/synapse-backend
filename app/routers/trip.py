@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Request, Depends, HTTPException, status
+from fastapi import APIRouter, Request, Depends, HTTPException, status, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, Any, Union, List
@@ -96,6 +96,7 @@ async def validate_auth_or_session(
 })
 async def plan_trip(
     request: PlanTripRequest,
+    response: Response,
     fs: FirestoreService = Depends(get_firestore_service),
     decoded_token: Optional[str] = Depends(optional_verify_id_token_dependency)
 ):
@@ -146,6 +147,11 @@ async def plan_trip(
         )
         
         logger.info(f"Trip planning completed successfully in {processing_time:.2f}s")
+        
+        # Add timeout headers for frontend
+        response.headers["X-Request-Timeout"] = "120"
+        response.headers["X-Processing-Time"] = str(processing_time)
+        
         return response_data
         
     except ValueError as e:
@@ -173,6 +179,7 @@ async def plan_trip(
 })
 async def adjust_itinerary(
     request: SmartAdjustRequest,
+    response: Response,
     fs: FirestoreService = Depends(get_firestore_service),
     decoded_token: Optional[str] = Depends(optional_verify_id_token_dependency)
 ):
@@ -251,6 +258,11 @@ async def adjust_itinerary(
         )
         
         logger.info(f"Itinerary adjustment completed successfully in {processing_time:.2f}s")
+        
+        # Add timeout headers for frontend
+        response.headers["X-Request-Timeout"] = "120"
+        response.headers["X-Processing-Time"] = str(processing_time)
+        
         return response_data
         
     except ValueError as e:
