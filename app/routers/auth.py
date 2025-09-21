@@ -16,8 +16,15 @@ router = APIRouter(tags=["auth"])
 # Request/Response Models
 class GoogleSignInRequest(BaseModel):
     """Request model for Google Sign-In"""
-    id_token: str
-    session_id: Optional[str] = None  # For migrating guest session data
+    idToken: str  # Changed from id_token to match frontend
+    userData: Optional[Dict[str, Any]] = None  # Frontend user data (optional)
+    platform: Optional[str] = None  # Platform info (optional)
+    appVersion: Optional[str] = None  # App version (optional)
+    sessionId: Optional[str] = None  # For migrating guest session data (renamed from session_id)
+    
+    class Config:
+        # Allow extra fields to be ignored instead of causing validation errors
+        extra = "ignore"
 
 class GoogleSignInResponse(BaseModel):
     """Response model for Google Sign-In"""
@@ -49,7 +56,7 @@ async def google_sign_in(
         logger.info("Processing Google Sign-In request")
         
         # Verify Google ID token
-        user_info = await auth_service.verify_google_token(request.id_token)
+        user_info = await auth_service.verify_google_token(request.idToken)
         if not user_info:
             raise HTTPException(
                 status_code=401, 
@@ -64,10 +71,10 @@ async def google_sign_in(
         
         # Migrate session data if provided
         migration_result = None
-        if request.session_id:
-            logger.info(f"Migrating session data: {request.session_id} -> {uid}")
+        if request.sessionId:
+            logger.info(f"Migrating session data: {request.sessionId} -> {uid}")
             migration_result = await auth_service.migrate_session_data(
-                request.session_id, 
+                request.sessionId, 
                 uid
             )
         
