@@ -209,34 +209,12 @@ async def adjust_itinerary(
         
         # Adjust itinerary using AI
         logger.info("Adjusting itinerary with SmartAdjust agent")
-        adjusted_content = await agent.adjust_itinerary(
+        adjusted_itinerary = await agent.adjust_itinerary(
             current_itinerary=request.itinerary,
             user_request=request.userRequest
         )
-
-
         
-        # # Parse the adjusted itinerary
-        # try:
-        #     import json
-        #     if isinstance(adjusted_content, str):
-        #         # Remove markdown formatting if present
-        #         content = adjusted_content.strip()
-        #         if content.startswith('```json'):
-        #             content = content[7:]
-        #         if content.startswith('```'):
-        #             content = content[3:]
-        #         if content.endswith('```'):
-        #             content = content[:-3]
-                
-        #         adjusted_itinerary = json.loads(content)
-        #     else:
-        #         adjusted_itinerary = adjusted_content
-        # except json.JSONDecodeError as e:
-        #     logger.error(f"Failed to parse adjusted itinerary: {e}")
-        #     raise ValueError("AI returned invalid JSON format")
-        
-        # # Save adjusted itinerary
+        # Save adjusted itinerary
         if user_id:
             itinerary_id = fs.save_itinerary_for_user(user_id, adjusted_itinerary)
         else:
