@@ -68,7 +68,7 @@ class ItineraryService:
         try:
             logger.info(f"Generating itinerary for {destination}, {days} days, budget: {budget}")
             
-            # Prepare user message with trip details
+            
             user_message = self._create_trip_planning_prompt(
                 destination=destination,
                 days=days,
@@ -115,7 +115,7 @@ class ItineraryService:
             logger.info(f"Google Search was used: {response.search_used}")
             
             # Parse and validate the response
-            itinerary_data = self._parse_llm_response(response.content)
+            itinerary_data = ItineraryService.parse_llm_response(response.content)
             
             # Add fallback POI IDs to activities
             itinerary_data = self._add_fallback_poi_ids(itinerary_data)
@@ -200,36 +200,46 @@ class ItineraryService:
         
         return " ".join(prompt_parts)
     
-    def _parse_llm_response(self, response_content: str) -> Dict[str, Any]:
-        """Parse LLM response and extract JSON itinerary"""
+    @staticmethod
+    def parse_llm_response(response_content: str) -> Dict[str, Any]:
+        """Parse LLM response and extract JSON itinerary with robust error handling"""
         try:
             # Log the raw response for debugging
             logger.info(f"Raw LLM response (first 200 chars): {response_content[:200]}")
             
-            # Try to find JSON in the response
-            response_content = response_content.strip()
+            # More robust markdown cleaning with regex
+            import re
             
-            # Remove markdown code blocks if present
-            if response_content.startswith('```json'):
-                response_content = response_content[7:]
-            if response_content.startswith('```'):
-                response_content = response_content[3:]
-            if response_content.endswith('```'):
-                response_content = response_content[:-3]
+            # Remove markdown code blocks more comprehensively
+            response_content = re.sub(r'^```(?:json)?\s*', '', response_content.strip(), flags=re.MULTILINE)
+            response_content = re.sub(r'\s*```\s*$', '', response_content, flags=re.MULTILINE)
+            
+            # Try to find JSON object/array boundaries if cleaning isn't enough
+            json_match = re.search(r'(\{.*\}|\[.*\])', response_content, re.DOTALL)
+            if json_match:
+                response_content = json_match.group(1)
             
             response_content = response_content.strip()
             logger.info(f"Cleaned response (first 200 chars): {response_content[:200]}")
             
             # Parse JSON
             itinerary_data = json.loads(response_content)
-            logger.info(f"Successfully parsed JSON with keys: {list(itinerary_data.keys()) if isinstance(itinerary_data, dict) else 'Not a dict'}")
+            
+            # Validate that result is a dictionary as expected
+            if not isinstance(itinerary_data, dict):
+                raise ValueError(f"Expected JSON object, got {type(itinerary_data).__name__}")
+            
+            logger.info(f"Successfully parsed JSON with keys: {list(itinerary_data.keys())}")
             return itinerary_data
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse LLM response as JSON: {e}")
             logger.error(f"Error at position {e.pos if hasattr(e, 'pos') else 'unknown'}")
             logger.error(f"Full response content (first 1000 chars): {response_content[:1000]}")
-            raise ValueError("LLM did not return valid JSON")
+            raise ValueError(f"LLM did not return valid JSON: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error parsing LLM response: {e}")
+            raise ValueError(f"Failed to parse LLM response: {e}")
     
     def _add_metadata(
         self, 
