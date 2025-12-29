@@ -1,20 +1,3 @@
-"""
-Firestore Service Layer for AI Trip Planner MVP.
-
-This service wraps all read/write operations for:
-- Users & itineraries
-- Guest sessions & itineraries
-- POIs & Places
-- Logs (search, LLM responses)
-
-Assumptions (per MVP):
-- Only the latest itinerary version is stored (no versions subcollection).
-- Session TTL = 4 hours (handled via expiresAt + Firestore TTL policy).
-- POI IDs = Google place_id.
-- Images stored in a public Cloud Storage bucket (URLs referenced here).
-- Server-only writes for search_logs & llm_responses (via Admin SDK).
-"""
-
 import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta, timezone
